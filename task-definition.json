@@ -1,0 +1,24 @@
+{
+  "family": "kaleidoscope-backend",
+  "networkMode": "awsvpc",
+  "containerDefinitions": [
+    {
+      "name": "kaleidoscope-backend",
+      "image": "your-dockerhub-username/kaleidoscope-backend:latest",
+      "portMappings": [
+        {
+          "containerPort": 8080,
+          "hostPort": 8080,
+          "protocol": "tcp"
+        }
+      ],
+      "essential": true,
+      "environment": [
+        {"name": "REDIS_URL", "value": "redis://your-redis-endpoint:6379"}
+      ]
+    }
+  ],
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "512",
+  "memory": "1024"
+}

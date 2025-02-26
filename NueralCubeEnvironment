@@ -1,0 +1,211 @@
+import * as THREE from 'three';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass';
+
+class AIEnvironment {
+    constructor(containerId) {
+        this.scene = new THREE.Scene();
+        this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        this.setupEnvironment(containerId);
+        this.setupLighting();
+        this.setupPostProcessing();
+        this.createCubes();
+        this.createAvatar();
+        this.setupInteraction();
+        this.animate();
+    }
+
+    setupEnvironment(containerId) {
+        this.renderer.setSize(window.innerWidth, window.innerHeight);
+        this.renderer.setPixelRatio(window.devicePixelRatio);
+        this.renderer.outputEncoding = THREE.sRGBEncoding;
+        document.getElementById(containerId).appendChild(this.renderer.domElement);
+        
+        this.camera.position.z = 5;
+        this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+        this.controls.enableDamping = true;
+        this.controls.dampingFactor = 0.05;
+    }
+
+    setupLighting() {
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+        this.scene.add(ambientLight);
+
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        directionalLight.position.set(1, 1, 1);
+        this.scene.add(directionalLight);
+
+        // Add volumetric lighting
+        const spotLight = new THREE.SpotLight(0x4477ff, 1);
+        spotLight.position.set(0, 5, 0);
+        spotLight.angle = Math.PI / 6;
+        spotLight.penumbra = 0.3;
+        this.scene.add(spotLight);
+    }
+
+    setupPostProcessing() {
+        this.composer = new EffectComposer(this.renderer);
+        const renderPass = new RenderPass(this.scene, this.camera);
+        this.composer.addPass(renderPass);
+
+        const bloomPass = new UnrealBloomPass(
+            new THREE.Vector2(window.innerWidth, window.innerHeight),
+            1.5, // strength
+            0.4, // radius
+            0.85 // threshold
+        );
+        this.composer.addPass(bloomPass);
+    }
+
+    createCubes() {
+        this.cubes = [];
+        const geometry = new THREE.BoxGeometry(1, 1, 1);
+        const material = new THREE.MeshPhysicalMaterial({
+            color: 0x00ff88,
+            metalness: 0.9,
+            roughness: 0.1,
+            transparent: true,
+            opacity: 0.8,
+            side: THREE.DoubleSide
+        });
+
+        for (let i = -2; i <= 2; i += 2) {
+            const cube = new THREE.Mesh(geometry, material.clone());
+            cube.position.x = i;
+            cube.userData.originalPosition = cube.position.clone();
+            cube.userData.originalScale = cube.scale.clone();
+            this.scene.add(cube);
+            this.cubes.push(cube);
+        }
+    }
+
+    createAvatar() {
+        // Create a geometric avatar using primitives
+        const avatarGroup = new THREE.Group();
+        
+        // Head - using an icosahedron for a more complex geometric look
+        const headGeometry = new THREE.IcosahedronGeometry(0.5, 1);
+        const headMaterial = new THREE.MeshPhysicalMaterial({
+            color: 0x4477ff,
+            metalness: 0.5,
+            roughness: 0.2,
+            transparent: true,
+            opacity: 0.9
+        });
+        this.avatarHead = new THREE.Mesh(headGeometry, headMaterial);
+        avatarGroup.add(this.avatarHead);
+
+        // Eyes
+        const eyeGeometry = new THREE.SphereGeometry(0.1, 16, 16);
+        const eyeMaterial = new THREE.MeshPhongMaterial({ color: 0xffffff });
+        const eyeL = new THREE.Mesh(eyeGeometry, eyeMaterial);
+        const eyeR = new THREE.Mesh(eyeGeometry, eyeMaterial);
+        eyeL.position.set(-0.2, 0, 0.4);
+        eyeR.position.set(0.2, 0, 0.4);
+        avatarGroup.add(eyeL, eyeR);
+
+        // Pupil
+        const pupilGeometry = new THREE.SphereGeometry(0.05, 16, 16);
+        const pupilMaterial = new THREE.MeshPhongMaterial({ color: 0x000000 });
+        const pupilL = new THREE.Mesh(pupilGeometry, pupilMaterial);
+        const pupilR = new THREE.Mesh(pupilGeometry, pupilMaterial);
+        pupilL.position.set(-0.2, 0, 0.45);
+        pupilR.position.set(0.2, 0, 0.45);
+        avatarGroup.add(pupilL, pupilR);
+
+        avatarGroup.position.set(0, 2, -2);
+        this.avatar = avatarGroup;
+        this.scene.add(avatarGroup);
+    }
+
+    setupInteraction() {
+        this.raycaster = new THREE.Raycaster();
+        this.mouse = new THREE.Vector2();
+        
+        window.addEventListener('mousemove', (event) => {
+            this.mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            this.mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+            this.handleHover();
+        });
+
+        window.addEventListener('click', () => this.handleClick());
+    }
+
+    handleHover() {
+        this.raycaster.setFromCamera(this.mouse, this.camera);
+        const intersects = this.raycaster.intersectObjects(this.cubes);
+
+        this.cubes.forEach(cube => {
+            if (intersects.length > 0 && intersects[0].object === cube) {
+                cube.material.color.setHex(0xff0088);
+                cube.scale.lerp(new THREE.Vector3(1.2, 1.2, 1.2), 0.1);
+            } else {
+                cube.material.color.setHex(0x00ff88);
+                cube.scale.lerp(cube.userData.originalScale, 0.1);
+            }
+        });
+    }
+
+    handleClick() {
+        this.raycaster.setFromCamera(this.mouse, this.camera);
+        const intersects = this.raycaster.intersectObjects(this.cubes);
+
+        if (intersects.length > 0) {
+            const cube = intersects[0].object;
+            this.animateAvatarResponse(cube);
+        }
+    }
+
+    animateAvatarResponse(cube) {
+        // Make avatar look at the clicked cube
+        const lookAt = new THREE.Vector3();
+        cube.getWorldPosition(lookAt);
+        this.avatar.lookAt(lookAt);
+
+        // Animate avatar "speaking"
+        const originalScale = this.avatarHead.scale.clone();
+        const pulseAnimation = {
+            scale: 1.2,
+            duration: 500,
+            iterations: 3
+        };
+
+        const startTime = Date.now();
+        const animate = () => {
+            const elapsed = Date.now() - startTime;
+            if (elapsed < pulseAnimation.duration * pulseAnimation.iterations) {
+                const scale = 1 + Math.sin(elapsed * 0.01) * 0.1;
+                this.avatarHead.scale.setScalar(scale);
+                requestAnimationFrame(animate);
+            } else {
+                this.avatarHead.scale.copy(originalScale);
+            }
+        };
+        animate();
+    }
+
+    animate() {
+        requestAnimationFrame(() => this.animate());
+
+        this.cubes.forEach(cube => {
+            cube.rotation.x += 0.01;
+            cube.rotation.y += 0.01;
+        });
+
+        // Gentle floating motion for avatar
+        this.avatar.position.y += Math.sin(Date.now() * 0.001) * 0.001;
+
+        this.controls.update();
+        this.composer.render();
+    }
+}
+
+// Initialize the environment
+const aiEnvironment = new AIEnvironment('cube-container');
+
+// Export for external use
+export default AIEnvironment

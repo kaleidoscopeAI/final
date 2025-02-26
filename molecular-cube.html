@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Molecular Cube Analysis</title>
+    <style>
+        body { margin: 0; overflow: hidden; }
+        #infoPanel {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            background: rgba(0,0,0,0.7);
+            color: #fff;
+            padding: 10px;
+            font-family: monospace;
+            z-index: 100;
+        }
+    </style>
+</head>
+<body>
+    <div id="infoPanel"></div>
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        class MolecularCubeEnvironment {
+            constructor() {
+                this.molecularData = {};
+                this.activeAnalysis = null;
+                this.init();
+                this.loadMolecularData();
+            }
+
+            init() {
+                this.scene = new THREE.Scene();
+                this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+                this.camera.position.set(15, 15, 15);
+
+                this.renderer = new THREE.WebGLRenderer({ antialias: true });
+                this.renderer.setSize(window.innerWidth, window.innerHeight);
+                this.renderer.setClearColor(0x111111);
+                document.body.appendChild(this.renderer.domElement);
+
+                this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+                this.controls.enableDamping = true;
+
+                this.setupLighting();
+                this.createStructuredCubes();
+                this.setupInteraction();
+                this.animate();
+            }
+
+            setupLighting() {
+                const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+                this.scene.add(ambientLight);
+
+                const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+                directionalLight.position.set(10, 10, 10);
+                this.scene.add(directionalLight);
+            }
+
+            createStructuredCubes() {
+                this.cubes = [];
+                const geometry = new THREE.BoxGeometry(1, 1, 1);
+                
+                // Enhanced material with molecular analysis properties
+                const material = new THREE.MeshPhysicalMaterial({
+                    color: 0x00ff88,
+                    metalness: 0.7,
+                    roughness: 0.2,
+                    transparent: true,
+                    opacity: 0.8,
+                    side: THREE.DoubleSide
+                });
+
+                // Create 3x3x3 cube structure
+                const offset = 2;
+                for (let x = -1; x <= 1; x++) {
+                    for (let y = -1; y <= 1; y++) {
+                        for (let z = -1; z <= 1; z++) {
+                            const cube = new THREE.Mesh(geometry, material.clone());
+                            cube.position.set(x * offset, y * offset, z * offset);
+                            
+                            // Add molecular analysis properties
+                            cube.userData = {
+                                molecularProperties: {
+                                    energy: 0,
+                                    charge: 0,
+                                    bondOrder: 0
+                                },
+                                position: [x, y, z],
+                                analyzed: false
+                            };
+
+                            this.cubes.push(cube);
+                            this.scene.add(cube);
+                        }
+                    }
+                }
+
+                // Create connecting lines between cubes
+                const lineMaterial = new THREE.LineBasicMaterial({ 
+                    color: 0x00ffff, 
+                    transparent: true, 
+                    opacity: 0.3 
+                });
+
+                this.cubes.forEach((cube, i) => {
+                    this.cubes.forEach((otherCube, j) => {
+                        if (i < j && this.isNeighbor(cube, otherCube)) {
+                            const geometry = new THREE.BufferGeometry().setFromPoints([
+                                cube.position,
+                                otherCube.position
+                            ]);
+                            const line = new THREE.Line(geometry, lineMaterial);
+                            this.scene.add(line);
+                        }
+                    });
+                });
+            }
+
+            isNeighbor(cube1, cube2) {
+                const distance = cube1.position.distanceTo(cube2.position);
+                return distance <= 2.5; // Adjusted for cube spacing
+            }
+
+            setupInteraction() {
+                this.raycaster = new THREE.Raycaster();
+                this.mouse = new THREE.Vector2();
+
+                window.addEventListener('mousemove', (event) => {
+                    this.mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+                    this.mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+                });
+
+                window.addEventListener('click', () => this.handleCubeClick());
+            }
+
+            handleCubeClick() {
+                this.raycaster.setFromCamera(this.mouse, this.camera);
+                const intersects = this.raycaster.intersectObjects(this.cubes);
+
+                if (intersects.length > 0) {
+                    const cube = intersects[0].object;
+                    this.analyzeCube(cube);
+                }
+            }
+
+            async analyzeCube(cube) {
+                cube.material.emissive.setHex(0x00ff00);
+                cube.material.emissiveIntensity = 1;
+
+                // Simulate molecular analysis with Avogadro-like calculations
+                const analysis = await this.performMolecularAnalysis(cube);
+                this.updateCubeProperties(cube, analysis);
+
+                setTimeout(() => {
+                    cube.material.emissiveIntensity = 0;
+                }, 1000);
+            }
+
+            async performMolecularAnalysis(cube) {
+                // Simulated molecular calculations
+                const pos = cube.userData.position;
+                const energyField = Math.sin(pos[0]) * Math.cos(pos[1]) * Math.sin(pos[2]);
+                const chargeField = Math.cos(pos[0] * pos[1] * pos[2]);
+                
+                return {
+                    energy: energyField * 100,
+                    charge: chargeField,
+                    bondOrder: Math.abs(energyField) * 3,
+                    electronDensity: (1 + Math.sin(pos[0] * pos[1])) / 2
+                };
+            }
+
+            updateCubeProperties(cube, analysis) {
+                cube.userData.molecularProperties = analysis;
+                cube.userData.analyzed = true;
+
+                const intensity = (analysis.electronDensity + 1) / 2;
+                cube.material.color.setHSL(0.3, 1, intensity);
+
+                this.displayAnalysis(analysis);
+            }
+
+            displayAnalysis(analysis) {
+                const panel = document.getElementById('infoPanel');
+                panel.innerHTML = `
+                    Energy: ${analysis.energy.toFixed(2)} eV<br>
+                    Charge: ${analysis.charge.toFixed(2)} e<br>
+                    Bond Order: ${analysis.bondOrder.toFixed(2)}<br>
+                    Electron Density: ${analysis.electronDensity.toFixed(2)}
+                `;
+            }
+
+            animate() {
+                requestAnimationFrame(() => this.animate());
+
+                this.cubes.forEach(cube => {
+                    if (cube.userData.analyzed) {
+                        const energy = cube.userData.molecularProperties.energy;
+                        cube.rotation.x += 0.01 * Math.sign(energy);
+                        cube.rotation.y += 0.01 * Math.sign(energy);
+                    }
+                });
+
+                this.controls.update();
+                this.renderer.render(this.scene, this.camera);
+            }
+        }
+
+        // Initialize
+        new MolecularCubeEnvironment();
+    </script>
+</body>
+</html>

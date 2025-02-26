@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Molecular Discovery System</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/axios/0.21.1/axios.min.js"></script>
+    <script src="https://cdn.plot.ly/plotly-2.14.0.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/9.4.4/math.js"></script>
+    
+    <style>
+        body { margin: 0; display: grid; grid-template-columns: 70% 30%; height: 100vh; }
+        #renderCanvas { width: 100%; height: 100%; }
+        #controlPanel { 
+            padding: 20px;
+            background: #1a1a1a;
+            color: #fff;
+            overflow-y: auto;
+        }
+        .property-card {
+            background: #2a2a2a;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+        }
+        #structureInfo { height: 300px; }
+        #energyPlot { height: 300px; }
+        input, button { 
+            width: 100%;
+            margin: 5px 0;
+            padding: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div id="renderCanvas"></div>
+    <div id="controlPanel">
+        <input type="text" id="compoundSearch" placeholder="Enter CID or compound name">
+        <button onclick="fetchCompound()">Search PubChem</button>
+        <div id="structureInfo"></div>
+        <div id="energyPlot"></div>
+        <div id="propertyAnalysis"></div>
+    </div>
+
+<script type="module">
+class MolecularModeler {
+    constructor() {
+        this.initScene();
+        this.initChemistryEngine();
+        this.setupEventListeners();
+    }
+
+    initScene() {
+        this.scene = new THREE.Scene();
+        this.camera = new THREE.PerspectiveCamera(75, window.innerWidth * 0.7 / window.innerHeight, 0.1, 1000);
+        this.renderer = new THREE.WebGLRenderer({ antialias: true });
+        this.renderer.setSize(window.innerWidth * 0.7, window.innerHeight);
+        document.getElementById('renderCanvas').appendChild(this.renderer.domElement);
+
+        this.camera.position.z = 5;
+        this.setupLighting();
+        
+        // Add ambient occlusion and depth effects
+        this.setupPostProcessing();
+    }
+
+    setupLighting() {
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        directionalLight.position.set(10, 10, 10);
+        this.scene.add(ambientLight, directionalLight);
+    }
+
+    initChemistryEngine() {
+        this.bondLengths = new Map([
+            ['C-C', 1.54], ['C=C', 1.34], ['C≡C', 1.20],
+            ['C-N', 1.47], ['C=N', 1.29], ['C≡N', 1.16],
+            ['C-O', 1.43], ['C=O', 1.23],
+            ['C-H', 1.09], ['N-H', 1.01], ['O-H', 0.96]
+        ]);
+
+        this.atomColors = new Map([
+            ['C', 0x808080], ['N', 0x0000FF],
+            ['O', 0xFF0000], ['H', 0xFFFFFF],
+            ['S', 0xFFFF00], ['P', 0xFFA500]
+        ]);
+
+        this.electronegativity = new Map([
+            ['H', 2.20], ['C', 2.55], ['N', 3.04],
+            ['O', 3.44], ['F', 3.98], ['P', 2.19],
+            ['S', 2.58], ['Cl', 3.16]
+        ]);
+    }
+
+    async fetchCompound(identifier) {
+        try {
+            // Fetch from PubChem
+            const response = await axios.get(`https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/${isNaN(identifier) ? 'name' : 'cid'}/${identifier}/JSON`);
+            const compound = response.data.PC_Compounds[0];
+            
+            // Extract 3D coordinates and connectivity
+            const atoms = compound.atoms;
+            const bonds = compound.bonds;
+            
+            this.clearScene();
+            this.renderMolecule(atoms, bonds);
+            this.calculateProperties(atoms, bonds);
+            this.simulateDynamics(atoms, bonds);
+        } catch (error) {
+            console.error('Error fetching compound:', error);
+        }
+    }
+
+    renderMolecule(atoms, bonds) {
+        // Create atom geometries
+        atoms.forEach(atom => {
+            const geometry = new THREE.SphereGeometry(this.getAtomRadius(atom.element), 32, 32);
+            const material = new THREE.MeshPhysicalMaterial({
+                color: this.atomColors.get(atom.element),
+                metalness: 0.3,
+                roughness: 0.5,
+                clearcoat: 1.0,
+                clearcoatRoughness: 0.1
+            });
+            const mesh = new THREE.Mesh(geometry, material);
+            mesh.position.set(atom.x, atom.y, atom.z);
+            this.scene.add(mesh);
+        });
+
+        // Create bond geometries
+        bonds.forEach(bond => {
+            const start = new THREE.Vector3(atoms[bond.aid1].x, atoms[bond.aid1].y, atoms[bond.aid1].z);
+            const end = new THREE.Vector3(atoms[bond.aid2].x, atoms[bond.aid2].y, atoms[bond.aid2].z);
+            
+            const bondGeometry = new THREE.CylinderGeometry(0.1, 0.1, start.distanceTo(end), 8);
+            const bondMaterial = new THREE.MeshPhysicalMaterial({
+                color: 0xffffff,
+                metalness: 0.1,
+                roughness: 0.5
+            });
+            
+            const bondMesh = new THREE.Mesh(bondGeometry, bondMaterial);
+            bondMesh.position.copy(start.lerp(end, 0.5));
+            bondMesh.lookAt(end);
+            this.scene.add(bondMesh);
+        });
+    }
+
+    calculateProperties(atoms, bonds) {
+        // Calculate molecular properties
+        const molecularWeight = this.calculateMolecularWeight(atoms);
+        const polarSurfaceArea = this.calculatePolarSurfaceArea(atoms, bonds);
+        const logP = this.estimateLogP(atoms, bonds);
+        
+        // Calculate energy using force field approximation
+        const energy = this.calculateEnergy(atoms, bonds);
+        
+        // Update UI with calculated properties
+        this.updatePropertyDisplay({
+            molecularWeight,
+            polarSurfaceArea,
+            logP,
+            energy
+        });
+    }
+
+    calculateEnergy(atoms, bonds) {
+        let totalEnergy = 0;
+        
+        // Bond energy contribution
+        bonds.forEach(bond => {
+            const atom1 = atoms[bond.aid1];
+            const atom2 = atoms[bond.aid2];
+            const bondType = this.getBondType(atom1.element, atom2.element, bond.order);
+            const idealLength = this.bondLengths.get(bondType);
+            const actualLength = this.calculateDistance(atom1, atom2);
+            
+            // Harmonic potential approximation
+            const k = 300; // Force constant
+            totalEnergy += 0.5 * k * Math.pow(actualLength - idealLength, 2);
+        });
+
+        // Electrostatic interactions
+        atoms.forEach((atom1, i) => {
+            atoms.slice(i + 1).forEach(atom2 => {
+                const distance = this.calculateDistance(atom1, atom2);
+                const charge1 = this.electronegativity.get(atom1.element);
+                const charge2 = this.electronegativity.get(atom2.element);
+                
+                // Coulomb's law approximation
+                totalEnergy += (charge1 * charge2) / distance;
+            });
+        });
+
+        return totalEnergy;
+    }
+
+    simulateDynamics(atoms, bonds) {
+        // Molecular dynamics simulation using Verlet integration
+        const dt = 0.001; // Time step
+        const steps = 1000;
+        
+        const velocities = atoms.map(() => new THREE.Vector3(
+            Math.random() - 0.5,
+            Math.random() - 0.5,
+            Math.random() - 0.5
+        ));
+
+        const energyProfile = [];
+        
+        for (let step = 0; step < steps; step++) {
+            const forces = this.calculateForces(atoms, bonds);
+            
+            // Update positions and velocities
+            atoms.forEach((atom, i) => {
+                const acceleration = forces[i].multiplyScalar(1 / atom.mass);
+                velocities[i].add(acceleration.multiplyScalar(dt));
+                atom.position.add(velocities[i].multiplyScalar(dt));
+            });
+
+            energyProfile.push(this.calculateEnergy(atoms, bonds));
+        }
+
+        this.plotEnergyProfile(energyProfile);
+    }
+
+    plotEnergyProfile(energyData) {
+        const trace = {
+            y: energyData,
+            type: 'scatter',
+            mode: 'lines',
+            line: {color: '#00ff00'}
+        };
+
+        const layout = {
+            title: 'Energy Profile During Simulation',
+            paper_bgcolor: '#1a1a1a',
+            plot_bgcolor: '#1a1a1a',
+            font: {color: '#ffffff'},
+            xaxis: {title: 'Simulation Step'},
+            yaxis: {title: 'Energy (kcal/mol)'}
+        };
+
+        Plotly.newPlot('energyPlot', [trace], layout);
+    }
+
+    updatePropertyDisplay(properties) {
+        const propertyAnalysis = document.getElementById('propertyAnalysis');
+        propertyAnalysis.innerHTML = `
+            <div class="property-card">
+                <h3>Molecular Properties</h3>
+                <p>Molecular Weight: ${properties.molecularWeight.toFixed(2)} g/mol</p>
+                <p>Polar Surface Area: ${properties.polarSurfaceArea.toFixed(2)} Å²</p>
+                <p>LogP: ${properties.logP.toFixed(2)}</p>
+                <p>Total Energy: ${properties.energy.toFixed(2)} kcal/mol</p>
+            </div>
+        `;
+    }
+
+    animate() {
+        requestAnimationFrame(() => this.animate());
+        this.renderer.render(this.scene, this.camera);
+    }
+}
+
+// Initialize the system
+const modeler = new MolecularModeler();
+modeler.animate();
+
+// Expose the fetch method globally
+window.fetchCompound = () => {
+    const identifier = document.getElementById('compoundSearch').value;
+    modeler.fetchCompound(identifier);
+};
+</script>
+</body>
+</html>

@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Neural Environment</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; }
+    </style>
+</head>
+<body>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+        import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+        class NeuralEnvironment {
+            constructor() {
+                this.scene = new THREE.Scene();
+                this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+                this.camera.position.z = 15;
+
+                this.renderer = new THREE.WebGLRenderer({ antialias: true });
+                this.renderer.setSize(window.innerWidth, window.innerHeight);
+                this.renderer.setClearColor(0x000000);
+                document.body.appendChild(this.renderer.domElement);
+
+                this.composer = new EffectComposer(this.renderer);
+                this.composer.addPass(new RenderPass(this.scene, this.camera));
+                this.composer.addPass(new UnrealBloomPass(
+                    new THREE.Vector2(window.innerWidth, window.innerHeight),
+                    1.5, 0.4, 0.85
+                ));
+
+                this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+                this.controls.enableDamping = true;
+                this.controls.dampingFactor = 0.05;
+
+                this.scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+                const pointLight = new THREE.PointLight(0x00ffff, 1, 100);
+                pointLight.position.set(0, 10, 10);
+                this.scene.add(pointLight);
+
+                this.neurons = [];
+                this.connections = [];
+                this.createNetwork();
+                this.setupInteraction();
+                this.animate();
+
+                window.addEventListener('resize', () => {
+                    this.camera.aspect = window.innerWidth / window.innerHeight;
+                    this.camera.updateProjectionMatrix();
+                    this.renderer.setSize(window.innerWidth, window.innerHeight);
+                    this.composer.setSize(window.innerWidth, window.innerHeight);
+                });
+            }
+
+            createNetwork() {
+                const neuronGeometry = new THREE.IcosahedronGeometry(0.5, 2);
+                const neuronMaterial = new THREE.MeshPhysicalMaterial({
+                    color: 0x00ff88,
+                    metalness: 0.9,
+                    roughness: 0.1,
+                    transparent: true,
+                    opacity: 0.8
+                });
+
+                for (let i = 0; i < 50; i++) {
+                    const neuron = new THREE.Mesh(neuronGeometry, neuronMaterial.clone());
+                    neuron.position.set(
+                        (Math.random() - 0.5) * 20,
+                        (Math.random() - 0.5) * 20,
+                        (Math.random() - 0.5) * 20
+                    );
+                    neuron.userData = { 
+                        connections: [],
+                        activity: 0,
+                        targetPosition: neuron.position.clone()
+                    };
+                    this.neurons.push(neuron);
+                    this.scene.add(neuron);
+                }
+
+                const lineMaterial = new THREE.LineBasicMaterial({
+                    color: 0x00ffff,
+                    transparent: true,
+                    opacity: 0.3
+                });
+
+                this.neurons.forEach((neuron, i) => {
+                    this.neurons.slice(i + 1).forEach(target => {
+                        if (neuron.position.distanceTo(target.position) < 10 && Math.random() > 0.7) {
+                            const geometry = new THREE.BufferGeometry().setFromPoints([
+                                neuron.position,
+                                target.position
+                            ]);
+                            const line = new THREE.Line(geometry, lineMaterial.clone());
+                            neuron.userData.connections.push({
+                                target: target,
+                                line: line,
+                                weight: Math.random()
+                            });
+                            this.connections.push(line);
+                            this.scene.add(line);
+                        }
+                    });
+                });
+            }
+
+            setupInteraction() {
+                this.raycaster = new THREE.Raycaster();
+                this.mouse = new THREE.Vector2();
+
+                window.addEventListener('mousemove', (event) => {
+                    this.mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+                    this.mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+                });
+
+                window.addEventListener('click', () => {
+                    this.raycaster.setFromCamera(this.mouse, this.camera);
+                    const intersects = this.raycaster.intersectObjects(this.neurons);
+                    if (intersects.length > 0) {
+                        this.activateNeuron(intersects[0].object);
+                    }
+                });
+            }
+
+            activateNeuron(neuron) {
+                neuron.userData.activity = 1;
+                neuron.scale.setScalar(1.5);
+                neuron.material.emissive.setHex(0x00ff00);
+                neuron.material.emissiveIntensity = 1;
+
+                neuron.userData.connections.forEach(conn => {
+                    conn.line.material.opacity = 1;
+                    setTimeout(() => {
+                        this.activateNeuron(conn.target);
+                    }, 100 + Math.random() * 200);
+                });
+
+                setTimeout(() => {
+                    neuron.scale.setScalar(1);
+                }, 300);
+            }
+
+            updateNetwork() {
+                this.neurons.forEach(neuron => {
+                    if (neuron.userData.activity > 0) {
+                        neuron.userData.activity *= 0.95;
+                        neuron.material.emissiveIntensity = neuron.userData.activity;
+                        
+                        neuron.userData.connections.forEach(conn => {
+                            conn.line.material.opacity = 0.3 + (neuron.userData.activity * 0.7);
+                            
+                            const positions = conn.line.geometry.attributes.position.array;
+                            positions[0] = neuron.position.x;
+                            positions[1] = neuron.position.y;
+                            positions[2] = neuron.position.z;
+                            positions[3] = conn.target.position.x;
+                            positions[4] = conn.target.position.y;
+                            positions[5] = conn.target.position.z;
+                            conn.line.geometry.attributes.position.needsUpdate = true;
+                        });
+                    }
+
+                    neuron.position.lerp(neuron.userData.targetPosition, 0.03);
+                    neuron.rotation.x += 0.01;
+                    neuron.rotation.y += 0.01;
+
+                    if (Math.random() < 0.01) {
+                        neuron.userData.targetPosition.set(
+                            (Math.random() - 0.5) * 20,
+                            (Math.random() - 0.5) * 20,
+                            (Math.random() - 0.5) * 20
+                        );
+                    }
+                });
+            }
+
+            animate() {
+                requestAnimationFrame(() => this.animate());
+                this.updateNetwork();
+                this.controls.update();
+                this.composer.render();
+            }
+        }
+
+        new NeuralEnvironment();
+    </script>
+</body>
+</html>
