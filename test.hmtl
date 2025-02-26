@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Interactive Background Test</title>
+  <style>
+    body, html {
+      margin: 0;
+      padding: 0;
+      width: 100vw;
+      height: 100vh;
+      background: radial-gradient(circle, #1e1b4b 0%, #0f172a 100%);
+      overflow: hidden;
+    }
+    canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="backgroundCanvas"></canvas>
+
+  <script>
+    const canvas = document.getElementById("backgroundCanvas");
+    const ctx = canvas.getContext("2d");
+
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+
+    let particles = [];
+    const particleCount = 100;
+
+    function generateParticles() {
+      for (let i = 0; i < particleCount; i++) {
+        particles.push({
+          x: Math.random() * canvas.width,
+          y: Math.random() * canvas.height,
+          z: Math.random() * 500 - 250,
+          size: Math.random() * 3 + 1,
+          velocityX: (Math.random() - 0.5) * 0.5,
+          velocityY: (Math.random() - 0.5) * 0.5
+        });
+      }
+    }
+
+    function drawParticles() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = "#4f46e5";
+
+      particles.forEach(p => {
+        p.x += p.velocityX;
+        p.y += p.velocityY;
+
+        if (p.x > canvas.width) p.x = 0;
+        if (p.y > canvas.height) p.y = 0;
+        if (p.x < 0) p.x = canvas.width;
+        if (p.y < 0) p.y = canvas.height;
+
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fill();
+      });
+
+      requestAnimationFrame(drawParticles);
+    }
+
+    generateParticles();
+    drawParticles();
+  </script>
+</body>
+</html>
+

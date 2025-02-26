@@ -1,0 +1,92 @@
+import numpy as np
+from scipy.spatial.distance import pdist, squareform
+import numba
+from typing import Dict, List, Tuple
+
+@numba.jit(nopython=True)
+class MolecularDynamics:
+    def __init__(self, timestep: float = 0.001, temperature: float = 300.0):
+        self.dt = timestep
+        self.temperature = temperature
+        self.kb = 0.00831446  # kJ/(mol·K)
+        self.setup_force_field()
+
+    def setup_force_field(self):
+        """Initialize AMBER-style force field parameters"""
+        self.force_field = {
+            'bonds': {
+                'C-C': {'k': 620.0, 'r0': 0.134},
+                'C-H': {'k': 340.0, 'r0': 0.109},
+                'C-N': {'k': 490.0, 'r0': 0.133},
+                'C-O': {'k': 570.0, 'r0': 0.123},
+                'O-H': {'k': 553.0, 'r0': 0.096},
+                'N-H': {'k': 434.0, 'r0': 0.101}
+            },
+            'angles': {
+                'C-C-C': {'k': 63.0, 'theta0': 120.0},
+                'C-C-H': {'k': 50.0, 'theta0': 120.0},
+                'C-N-H': {'k': 50.0, 'theta0': 120.0},
+                'H-C-H': {'k': 35.0, 'theta0': 109.5},
+                'C-O-H': {'k': 55.0, 'theta0': 108.5}
+            },
+            'dihedrals': {
+                'X-C-C-X': {'k': [8.37, 0.0, 0.0], 'n': [1, 2, 3], 'delta': [0.0, 180.0, 0.0]},
+                'X-C-N-X': {'k': [8.37, 0.0, 0.0], 'n': [1, 2, 3], 'delta': [0.0, 180.0, 0.0]}
+            },
+            'vdw': {
+                'C': {'epsilon': 0.359, 'sigma': 0.340},
+                'H': {'epsilon': 0.065, 'sigma': 0.247},
+                'N': {'epsilon': 0.170, 'sigma': 0.325},
+                'O': {'epsilon': 0.210, 'sigma': 0.296}
+            },
+            'charges': {
+                'C': -0.115,
+                'H': 0.115,
+                'N': -0.490,
+                'O': -0.400
+            }
+        }
+
+    @numba.jit(nopython=True)
+    def simulate(self, system: Dict, steps: int) -> Dict:
+        """Run molecular dynamics simulation"""
+        trajectory = []
+        energies = []
+        temperatures = []
+
+        # Initialize velocities
+        velocities = self.initialize_velocities(system)
+
+        for step in range(steps):
+            # Calculate forces
+            forces = self.calculate_forces(system)
+            
+            # Update positions and velocities (Velocity Verlet)
+            positions, velocities = self.velocity_verlet_step(
+                system['positions'], velocities, forces, self.dt
+            )
+            system['positions'] = positions
+            
+            # Temperature coupling
+            if step % 10 == 0:  # Apply thermostat every 10 steps
+                velocities = self.berendsen_thermostat(velocities)
+            
+            # Calculate energies
+            potential = self.calculate_potential_energy(system)
+            kinetic = self.calculate_kinetic_energy(velocities, system['masses'])
+            
+            # Save trajectory and energies
+            if step % 100 == 0:  # Save every 100 steps
+                trajectory.append(positions.copy())
+                energies.append(potential + kinetic)
+                temperatures.append(self.calculate_temperature(velocities, system['masses']))
+            
+        return {
+            'trajectory': trajectory,
+            'energies': energies,
+            'temperatures': temperatures,
+            'final_positions': positions,
+            'final_velocities': velocities
+        }
+
+    @numba.jit(nop

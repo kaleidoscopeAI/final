@@ -1,0 +1,136 @@
+"strength": float(np.mean([p["strength"] for p in patterns])),
+                "support": sum(p["support"] for p in patterns)
+            }
+            
+        except Exception as e:
+            logger.warning(f"Community analysis failed: {str(e)}")
+            return None
+
+    def _calculate_confidence(self, patterns: List[Dict[str, Any]]) -> float:
+        if not patterns:
+            return 0.0
+        scores = []
+        for pattern in patterns:
+            score = pattern["strength"] * (pattern["support"] / self.config.MIN_SUPPORT)
+            scores.append(min(score, 1.0))
+        return float(np.mean(scores))
+
+    async def process_stream(self, websocket: WebSocket) -> None:
+        try:
+            while True:
+                data = await websocket.receive_bytes()
+                decoded_data = msgpack.unpackb(data, raw=False)
+                result = await self.process_batch(decoded_data)
+                await websocket.send_bytes(msgpack.packb(result, use_bin_type=True))
+        except Exception as e:
+            logger.error(f"Stream processing error: {str(e)}")
+            raise
+
+# API Setup
+app = FastAPI(title="Kaleidoscope AI")
+config = SystemConfig()
+engine = PatternEngine(config)
+
+@app.post("/insights", response_model=InsightResponse)
+async def process_insights(request: InsightRequest):
+    try:
+        result = await engine.process_batch(request.data)
+        return InsightResponse(
+            insights=result["insights"],
+            confidence=result["confidence"],
+            processing_time=result["processing_time"],
+            pattern_count=result["pattern_count"]
+        )
+    except Exception as e:
+        logger.error(f"API error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    try:
+        await engine.process_stream(websocket)
+    except Exception as e:
+        logger.error(f"WebSocket error: {str(e)}")
+        await websocket.close()
+
+@app.get("/metrics")
+async def get_metrics():
+    return {
+        "memory_usage": len(engine.memory.patterns),
+        "pattern_graph_size": len(engine.pattern_graph),
+        "importance_scores": engine.memory.importance_scores,
+        "timestamp": datetime.now().isoformat()
+    }
+
+@app.get("/health")
+async def health_check():
+    return {
+        "status": "healthy",
+        "timestamp": datetime.now().isoformat(),
+        "config": config.dict()
+    }
+
+# Testing Suite
+def test_pattern_engine():
+    """Basic test suite for the pattern engine"""
+    
+    test_config = SystemConfig(
+        BATCH_SIZE=10,
+        MIN_SUPPORT=2,
+        PATTERN_THRESHOLD=0.5,
+        MAX_MEMORY_PATTERNS=100
+    )
+    
+    engine = PatternEngine(test_config)
+    
+    # Test data
+    test_data = [
+        {"feature1": 1.0, "feature2": 2.0},
+        {"feature1": 1.1, "feature2": 2.1},
+        {"feature1": 0.9, "feature2": 1.9},
+        {"feature1": 5.0, "feature2": 6.0},
+        {"feature1": 5.1, "feature2": 6.1}
+    ]
+    
+    async def run_tests():
+        # Test batch processing
+        result = await engine.process_batch(test_data)
+        assert result["status"] == "success"
+        assert len(result["insights"]) > 0
+        
+        # Test pattern creation
+        patterns = [p for p in engine.pattern_graph.nodes(data=True)]
+        assert len(patterns) > 0
+        
+        # Test memory management
+        assert len(engine.memory.patterns) > 0
+        
+        # Test confidence calculation
+        assert 0 <= result["confidence"] <= 1
+        
+        return "All tests passed"
+    
+    return asyncio.run(run_tests())
+
+def main():
+    """Main entry point"""
+    # Create data directory
+    os.makedirs(config.DATA_DIR, exist_ok=True)
+    
+    # Run tests in debug mode
+    if os.getenv("DEBUG"):
+        print("Running tests...")
+        test_result = test_pattern_engine()
+        print(test_result)
+    
+    # Start FastAPI application
+    uvicorn.run(
+        app,
+        host=config.API_HOST,
+        port=config.API_PORT,
+        workers=config.MAX_WORKERS
+    )
+
+if __name__ == "__main__":
+    main()

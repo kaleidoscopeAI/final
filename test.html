@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kaleidoscope AI Interactive Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; background: linear-gradient(to right, #1e3c72, #2a5298); color: white; }
+        .dashboard { display: flex; flex-wrap: wrap; justify-content: center; gap: 20px; padding: 20px; }
+        .container { width: 45%; background: rgba(255, 255, 255, 0.1); padding: 20px; border-radius: 10px; }
+        .full-width { width: 100%; }
+        .chatbot-avatar { position: fixed; bottom: 20px; right: 20px; width: 100px; height: 100px; border-radius: 50%; background: url('avatar.png') no-repeat center; background-size: cover; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <h1>Kaleidoscope AI Interactive Dashboard</h1>
+    <div class="dashboard">
+        <div class="container">
+            <h3>Node Insights</h3>
+            <canvas id="nodeChart"></canvas>
+        </div>
+        <div class="container">
+            <h3>Energy Flow</h3>
+            <canvas id="energyChart"></canvas>
+        </div>
+        <div class="container full-width">
+            <h3>3D Molecular-Quantum Cube Visualization</h3>
+            <div id="3D-visualization" style="width: 100%; height: 500px; margin: auto;"></div>
+        </div>
+    </div>
+    
+    <div class="chatbot-avatar" onclick="openChatbot()"></div>
+    
+    <script>
+        function openChatbot() {
+            alert("Chatbot is opening..."); // Replace with chatbot integration logic
+        }
+
+        // Node and Energy Charts
+        const nodeData = [12, 19, 3, 5, 2, 3];
+        const nodeLabels = ["Node A", "Node B", "Node C", "Node D", "Node E", "Node F"];
+        
+        new Chart(document.getElementById("nodeChart"), {
+            type: 'bar',
+            data: {
+                labels: nodeLabels,
+                datasets: [{
+                    label: 'Node Insights',
+                    data: nodeData,
+                    backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                    borderColor: 'rgba(75, 192, 192, 1)',
+                    borderWidth: 1
+                }]
+            },
+            options: { responsive: true }
+        });
+        
+        const energyData = [50, 60, 40, 70, 55, 65];
+        new Chart(document.getElementById("energyChart"), {
+            type: 'line',
+            data: {
+                labels: nodeLabels,
+                datasets: [{
+                    label: 'Energy Flow',
+                    data: energyData,
+                    backgroundColor: 'rgba(255, 99, 132, 0.2)',
+                    borderColor: 'rgba(255, 99, 132, 1)',
+                    borderWidth: 1
+                }]
+            },
+            options: { responsive: true }
+        });
+
+        // 3D Molecular-Quantum Cube Visualization using Three.js
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / 500, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth * 0.8, 500);
+        document.getElementById("3D-visualization").appendChild(renderer.domElement);
+
+        // Cube Setup
+        const geometry = new THREE.BoxGeometry(1, 1, 1, 10, 10, 10);
+        const wireframe = new THREE.WireframeGeometry(geometry);
+        const material = new THREE.LineBasicMaterial({ color: 0x00ffff });
+        const cube = new THREE.LineSegments(wireframe, material);
+        scene.add(cube);
+
+        // Quantum Molecular Points
+        const molecularPoints = [];
+        const molecularMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+        const molecularGeometry = new THREE.SphereGeometry(0.05, 16, 16);
+
+        for (let i = 0; i < 10; i++) {
+            let point = new THREE.Mesh(molecularGeometry, molecularMaterial);
+            point.position.set((Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2);
+            scene.add(point);
+            molecularPoints.push(point);
+        }
+
+        // Lighting
+        const light = new THREE.PointLight(0xffffff, 1, 100);
+        light.position.set(2, 2, 2);
+        scene.add(light);
+
+        camera.position.z = 3;
+
+        function animate() {
+            requestAnimationFrame(animate);
+            cube.rotation.x += 0.01;
+            cube.rotation.y += 0.01;
+            molecularPoints.forEach(point => {
+                point.position.x += (Math.random() - 0.5) * 0.01;
+                point.position.y += (Math.random() - 0.5) * 0.01;
+                point.position.z += (Math.random() - 0.5) * 0.01;
+            });
+            renderer.render(scene, camera);
+        }
+        animate();
+    </script>
+</body>
+</html>
+
